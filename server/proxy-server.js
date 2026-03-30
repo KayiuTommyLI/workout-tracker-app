@@ -12,7 +12,7 @@ app.get('/api/health', (_req, res) => {
 
 app.post('/api/gemini-workout', async (req, res) => {
     try {
-        const geminiApiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+        const geminiApiKey = process.env.GEMINI_API_KEY;
 
         if (!geminiApiKey) {
             return res.status(500).json({ error: 'Server Gemini API key is not configured.' });
@@ -44,10 +44,18 @@ app.post('/api/gemini-workout', async (req, res) => {
         }
 
         const data = await response.json();
-        const generatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        const generatedText =
+            data?.candidates?.[0]?.content?.parts
+                ?.map(part => (typeof part?.text === 'string' ? part.text : ''))
+                .join('')
+                .trim() || '';
 
         if (!generatedText) {
-            return res.status(502).json({ error: 'No generated text returned by Gemini.' });
+            return res.status(502).json({
+                error: 'No generated text returned by Gemini.',
+                finishReason: data?.candidates?.[0]?.finishReason || null,
+                promptFeedback: data?.promptFeedback || null,
+            });
         }
 
         res.json({ generatedText });

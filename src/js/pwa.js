@@ -39,3 +39,24 @@ window.addEventListener('beforeinstallprompt', (e) => {
 });
 
 console.log('PWA module loaded');
+
+// Development safeguard: remove stale service workers/cache on localhost
+if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+    window.addEventListener('load', async () => {
+        try {
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                await Promise.all(registrations.map(registration => registration.unregister()));
+            }
+
+            if ('caches' in window) {
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(cacheName => caches.delete(cacheName)));
+            }
+
+            console.log('🧹 Dev cache cleanup complete');
+        } catch (error) {
+            console.warn('Dev cache cleanup failed:', error);
+        }
+    });
+}

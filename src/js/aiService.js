@@ -23,9 +23,9 @@ Based on this information, suggest a workout for today. Consider:
 3. Available equipment
 4. Balanced training split
 
-Respond in JSON format with this structure:
+Respond with ONLY valid JSON (no markdown, no code fences, no extra text) using this exact structure:
 {
-    "intensity": "Moderate" | "High" | "Low",
+    "intensity": "Moderate",
     "justification": "Why this workout is recommended today (2-3 sentences)",
     "exercises": [
         {
@@ -38,7 +38,12 @@ Respond in JSON format with this structure:
     ]
 }
 
-Include 4-6 exercises. Make it specific and actionable.`;
+Rules:
+- Use exactly these top-level keys: intensity, justification, exercises
+- Keep exercises to 4-6 items
+- Keep notes concise
+- Ensure valid JSON syntax (double quotes, no trailing commas)
+`;
 
     try {
         const response = await fetch('/api/gemini-workout', {
@@ -52,20 +57,25 @@ Include 4-6 exercises. Make it specific and actionable.`;
         });
 
         if (!response.ok) {
-            const errorText = await response.text();
+            let errorText = '';
+            try {
+                const errorData = await response.json();
+                errorText = errorData?.details || errorData?.error || JSON.stringify(errorData);
+            } catch {
+                errorText = await response.text();
+            }
             throw new Error(`AI proxy error: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();
 
-        const generatedText = data.generatedText;
+        const generatedText = data?.generatedText;
 
         if (!generatedText) {
             throw new Error('No text generated from AI service');
         }
 
-        const jsonText = extractJsonObject(generatedText);
-        const recommendation = normalizeRecommendation(JSON.parse(jsonText));
+        const recommendation = normalizeRecommendation(parseRecommendationJson(generatedText));
 
         // Validate the recommendation structure
         if (!recommendation.exercises || !Array.isArray(recommendation.exercises)) {
@@ -81,17 +91,19 @@ Include 4-6 exercises. Make it specific and actionable.`;
     } catch (error) {
         console.error('Error calling Gemini API:', error);
 
-        const message = String(error?.message || '');
+        const message = String(error?.message || '').toLowerCase();
         let reason = 'AI recommendation is currently unavailable.';
 
         if (message.includes('project quota tier unavailable')) {
             reason = 'AI recommendation is unavailable because your Google project quota tier is not enabled for this API key.';
-        } else if (message.includes('429')) {
+        } else if (message.includes('429') || message.includes('resource_exhausted') || message.includes('quota')) {
             reason = 'AI recommendation is temporarily unavailable because the Gemini API quota/rate limit was exceeded.';
         } else if (message.includes('401') || message.includes('403')) {
             reason = 'AI recommendation is unavailable because API authentication/permission failed.';
-        } else if (message.includes('500')) {
+        } else if (message.includes('500') || message.includes('502')) {
             reason = 'AI recommendation is unavailable due to a temporary server issue.';
+        } else if (message.includes('no generated text') || message.includes('invalid recommendation format') || message.includes('no json object found')) {
+            reason = 'AI recommendation could not be parsed from the model response. Please retry once.';
         }
 
         // Return a fallback recommendation
@@ -109,24 +121,135 @@ function extractJsonObject(text) {
         .trim();
 
     const firstBrace = withoutCodeFence.indexOf('{');
-    const lastBrace = withoutCodeFence.lastIndexOf('}');
-
-    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+    if (firstBrace === -1) {
         throw new Error('No JSON object found in AI response');
     }
 
-    return withoutCodeFence.slice(firstBrace, lastBrace + 1);
+    const start = withoutCodeFence.slice(firstBrace);
+    const balanced = findBalancedJsonObject(start);
+    if (balanced) return balanced;
+
+    return start;
+}
+
+function parseRecommendationJson(text) {
+    const raw = extractJsonObject(text);
+    const attempts = [
+        raw,
+        cleanupJsonString(raw),
+        closeOpenJsonStructures(cleanupJsonString(raw)),
+    ];
+
+    for (const candidate of attempts) {
+        try {
+            return JSON.parse(candidate);
+        } catch {
+            // try next candidate
+        }
+    }
+
+    throw new Error('Invalid recommendation format');
+}
+
+function cleanupJsonString(text) {
+    return String(text || '')
+        .replace(/[\u201C\u201D]/g, '"')
+        .replace(/[\u2018\u2019]/g, "'")
+        .replace(/,\s*([}\]])/g, '$1')
+        .trim();
+}
+
+function findBalancedJsonObject(text) {
+    let depth = 0;
+    let inString = false;
+    let escaping = false;
+
+    for (let i = 0; i < text.length; i += 1) {
+        const ch = text[i];
+
+        if (inString) {
+            if (escaping) {
+                escaping = false;
+            } else if (ch === '\\') {
+                escaping = true;
+            } else if (ch === '"') {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (ch === '"') {
+            inString = true;
+            continue;
+        }
+
+        if (ch === '{') {
+            depth += 1;
+        } else if (ch === '}') {
+            depth -= 1;
+            if (depth === 0) {
+                return text.slice(0, i + 1);
+            }
+        }
+    }
+
+    return null;
+}
+
+function closeOpenJsonStructures(text) {
+    const stack = [];
+    let inString = false;
+    let escaping = false;
+
+    for (let i = 0; i < text.length; i += 1) {
+        const ch = text[i];
+
+        if (inString) {
+            if (escaping) {
+                escaping = false;
+            } else if (ch === '\\') {
+                escaping = true;
+            } else if (ch === '"') {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (ch === '"') {
+            inString = true;
+            continue;
+        }
+
+        if (ch === '{') stack.push('}');
+        if (ch === '[') stack.push(']');
+        if ((ch === '}' || ch === ']') && stack.length > 0) stack.pop();
+    }
+
+    return `${text}${stack.reverse().join('')}`;
 }
 
 function normalizeRecommendation(recommendation) {
-    const normalizedExercises = Array.isArray(recommendation?.exercises)
-        ? recommendation.exercises
+    const exerciseSource = recommendation?.exercises
+        || recommendation?.workout
+        || recommendation?.workoutPlan
+        || recommendation?.exercisePlan
+        || [];
+
+    const normalizedExercises = Array.isArray(exerciseSource)
+        ? exerciseSource
+            .map(ex => ({
+                ...ex,
+                name: ex?.name || ex?.exercise || ex?.exerciseName || ex?.title,
+                sets: ex?.sets ?? ex?.set,
+                reps: ex?.reps ?? ex?.repRange ?? ex?.rep,
+                weight: ex?.weight ?? ex?.load ?? 0,
+            }))
             .filter(ex => ex && ex.name)
             .map(ex => ({
                 name: String(ex.name),
-                sets: Number(ex.sets) > 0 ? Number(ex.sets) : 3,
-                reps: Number(ex.reps) > 0 ? Number(ex.reps) : 10,
-                weight: Number(ex.weight) >= 0 ? Number(ex.weight) : 0,
+                sets: Number.parseInt(String(ex.sets), 10) > 0 ? Number.parseInt(String(ex.sets), 10) : 3,
+                reps: normalizeReps(ex.reps),
+                weight: normalizeWeight(ex.weight),
                 notes: ex.notes ? String(ex.notes) : 'Focus on controlled form and progressive overload.',
             }))
         : [];
@@ -146,6 +269,28 @@ function normalizeRecommendation(recommendation) {
             : 'Recommended based on your available equipment and recent training load.',
         exercises: normalizedExercises.slice(0, 6),
     };
+}
+
+function normalizeReps(value) {
+    if (typeof value === 'number' && value > 0) return value;
+    const text = String(value ?? '').trim();
+    if (!text) return 10;
+
+    const rangeMatch = text.match(/(\d+)\s*[-–]\s*(\d+)/);
+    if (rangeMatch) {
+        return Number.parseInt(rangeMatch[1], 10) || 10;
+    }
+
+    const firstNumber = text.match(/\d+/);
+    return firstNumber ? Number.parseInt(firstNumber[0], 10) : 10;
+}
+
+function normalizeWeight(value) {
+    if (typeof value === 'number' && value >= 0) return value;
+    const text = String(value ?? '').trim();
+    if (!text) return 0;
+    const numberMatch = text.match(/\d+(\.\d+)?/);
+    return numberMatch ? Number(numberMatch[0]) : 0;
 }
 
 // Fallback recommendation if AI fails
