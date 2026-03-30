@@ -1,11 +1,5 @@
-import CONFIG from '../config/config.js';
-
 // Get AI workout recommendation using Gemini API
 export async function getAIWorkoutRecommendation(userId, userProfile, equipment, recentWorkouts) {
-    if (!CONFIG.GEMINI_API_KEY) {
-        throw new Error('Gemini API key is not configured');
-    }
-
     // Prepare context for AI
     const equipmentList = equipment.map(e => e.equipmentName).join(', ');
     const recentWorkoutSummary = recentWorkouts.length > 0
@@ -47,79 +41,122 @@ Respond in JSON format with this structure:
 Include 4-6 exercises. Make it specific and actionable.`;
 
     try {
-        // Use the correct API endpoint for Gemini 2.5 Flash
-        const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
-
-        const response = await fetch(apiUrl, {
+        const response = await fetch('/api/gemini-workout', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: prompt
-                    }]
-                }],
-                generationConfig: {
-                    temperature: 0.7,
-                    maxOutputTokens: 2048,
-                }
+                prompt,
             })
         });
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('Gemini API error response:', errorText);
-            throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+            throw new Error(`AI proxy error: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();
-        console.log('Gemini API response:', data);
 
-        // Extract text from response
-        const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        const generatedText = data.generatedText;
 
         if (!generatedText) {
-            throw new Error('No text generated from Gemini API');
+            throw new Error('No text generated from AI service');
         }
 
-        console.log('Generated text:', generatedText);
-
-        // Parse JSON from the response (remove markdown code blocks if present)
-        let jsonText = generatedText.trim();
-        if (jsonText.startsWith('```json')) {
-            jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-        } else if (jsonText.startsWith('```')) {
-            jsonText = jsonText.replace(/```\n?/g, '');
-        }
-
-        const recommendation = JSON.parse(jsonText);
+        const jsonText = extractJsonObject(generatedText);
+        const recommendation = normalizeRecommendation(JSON.parse(jsonText));
 
         // Validate the recommendation structure
         if (!recommendation.exercises || !Array.isArray(recommendation.exercises)) {
             throw new Error('Invalid recommendation format');
         }
 
-        console.log('✅ AI recommendation generated successfully:', recommendation);
-        return recommendation;
+        return {
+            ...recommendation,
+            source: 'live',
+            fallbackReason: null,
+        };
 
     } catch (error) {
         console.error('Error calling Gemini API:', error);
 
+        const message = String(error?.message || '');
+        let reason = 'AI recommendation is currently unavailable.';
+
+        if (message.includes('project quota tier unavailable')) {
+            reason = 'AI recommendation is unavailable because your Google project quota tier is not enabled for this API key.';
+        } else if (message.includes('429')) {
+            reason = 'AI recommendation is temporarily unavailable because the Gemini API quota/rate limit was exceeded.';
+        } else if (message.includes('401') || message.includes('403')) {
+            reason = 'AI recommendation is unavailable because API authentication/permission failed.';
+        } else if (message.includes('500')) {
+            reason = 'AI recommendation is unavailable due to a temporary server issue.';
+        }
+
         // Return a fallback recommendation
-        console.log('⚠️ Using fallback recommendation');
-        return getFallbackRecommendation(equipment);
+        return getFallbackRecommendation(equipment, reason);
     }
 }
 
+function extractJsonObject(text) {
+    const trimmed = String(text || '').trim();
+
+    const withoutCodeFence = trimmed
+        .replace(/^```json\s*/i, '')
+        .replace(/^```\s*/i, '')
+        .replace(/```$/i, '')
+        .trim();
+
+    const firstBrace = withoutCodeFence.indexOf('{');
+    const lastBrace = withoutCodeFence.lastIndexOf('}');
+
+    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+        throw new Error('No JSON object found in AI response');
+    }
+
+    return withoutCodeFence.slice(firstBrace, lastBrace + 1);
+}
+
+function normalizeRecommendation(recommendation) {
+    const normalizedExercises = Array.isArray(recommendation?.exercises)
+        ? recommendation.exercises
+            .filter(ex => ex && ex.name)
+            .map(ex => ({
+                name: String(ex.name),
+                sets: Number(ex.sets) > 0 ? Number(ex.sets) : 3,
+                reps: Number(ex.reps) > 0 ? Number(ex.reps) : 10,
+                weight: Number(ex.weight) >= 0 ? Number(ex.weight) : 0,
+                notes: ex.notes ? String(ex.notes) : 'Focus on controlled form and progressive overload.',
+            }))
+        : [];
+
+    let intensity = recommendation?.intensity;
+    if (typeof intensity === 'number') {
+        intensity = intensity >= 8 ? 'High' : intensity <= 4 ? 'Low' : 'Moderate';
+    }
+    if (!['Low', 'Moderate', 'High'].includes(intensity)) {
+        intensity = 'Moderate';
+    }
+
+    return {
+        intensity,
+        justification: recommendation?.justification
+            ? String(recommendation.justification)
+            : 'Recommended based on your available equipment and recent training load.',
+        exercises: normalizedExercises.slice(0, 6),
+    };
+}
+
 // Fallback recommendation if AI fails
-function getFallbackRecommendation(equipment) {
+function getFallbackRecommendation(equipment, reason = 'AI recommendation is currently unavailable.') {
     const hasEquipment = equipment.length > 0;
 
     return {
         intensity: 'Moderate',
-        justification: 'AI recommendation is currently unavailable. Here\'s a balanced full-body workout based on your available equipment. This workout targets all major muscle groups with compound movements.',
+        justification: `${reason} Here\'s a balanced full-body workout based on your available equipment. This workout targets all major muscle groups with compound movements.`,
+        source: 'fallback',
+        fallbackReason: reason,
         exercises: hasEquipment ? [
             {
                 name: 'Barbell Squat',

@@ -44,11 +44,25 @@ workout-tracker-app
    ```
    npm install
    ```
+4. Create environment file:
+   ```
+   copy .env.example .env
+   ```
 
 ## Usage
-1. Open `src/index.html` in a web browser.
-2. Use the workout form to input your workout details.
-3. View your workout history and receive recommendations for your next workout.
+1. Start frontend + API proxy together:
+   ```
+   npm run dev:full
+   ```
+2. Open the Vite URL shown in terminal (usually http://localhost:3000).
+3. Use the workout form to input your workout details.
+4. View your workout history and receive recommendations for your next workout.
+
+## Environment Variables
+- `VITE_GOOGLE_SHEETS_API_KEY` - Google Sheets browser API key
+- `VITE_GOOGLE_SHEETS_ID` - Google Sheets ID
+- `VITE_GOOGLE_CLIENT_ID` - Google OAuth client ID
+- `GEMINI_API_KEY` - Gemini API key used by backend proxy only
 
 ## Contributing
 Contributions are welcome! Please submit a pull request or open an issue for any enhancements or bug fixes.

@@ -10,7 +10,6 @@ const CONFIG = {
     GOOGLE_SHEETS_API_KEY: import.meta.env.VITE_GOOGLE_SHEETS_API_KEY,
     GOOGLE_SHEETS_ID: import.meta.env.VITE_GOOGLE_SHEETS_ID,
     GOOGLE_CLIENT_ID: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-    GEMINI_API_KEY: import.meta.env.VITE_GEMINI_API_KEY,
     
     // Sheet names and ranges
     SHEETS: {
@@ -45,11 +44,5 @@ if (!CONFIG.GOOGLE_SHEETS_API_KEY || CONFIG.GOOGLE_SHEETS_API_KEY === 'YOUR_API_
 if (!CONFIG.GOOGLE_SHEETS_ID || CONFIG.GOOGLE_SHEETS_ID === 'YOUR_SHEET_ID_HERE') {
     console.error('❌ Google Sheets ID is not configured!');
 }
-
-if (!CONFIG.GEMINI_API_KEY) {
-    console.warn('⚠️ Gemini API Key is not configured. AI features will be disabled.');
-}
-
-console.log('CONFIG loaded:', CONFIG);
 
 export default CONFIG;

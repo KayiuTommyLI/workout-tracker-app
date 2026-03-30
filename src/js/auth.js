@@ -2,13 +2,15 @@ import CONFIG from '../config/config.js';
 
 let tokenClient;
 let accessToken = null;
+const TOKEN_KEY = 'google_access_token';
+const TOKEN_EXPIRY_KEY = 'google_token_expiry';
 
 // Initialize Google Identity Services
 export function initializeAuth() {
     return new Promise((resolve) => {
-        // Try to restore token from localStorage
-        const savedToken = localStorage.getItem('google_access_token');
-        const tokenExpiry = localStorage.getItem('google_token_expiry');
+        // Try to restore token across refreshes/tabs
+        const savedToken = localStorage.getItem(TOKEN_KEY);
+        const tokenExpiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
         
         if (savedToken && tokenExpiry && Date.now() < parseInt(tokenExpiry)) {
             accessToken = savedToken;
@@ -49,34 +51,59 @@ function initTokenClient() {
 // Request user authorization
 export function requestAuthorization() {
     return new Promise((resolve, reject) => {
-        if (accessToken) {
+        const tokenExpiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
+
+        if (accessToken && tokenExpiry && Date.now() < parseInt(tokenExpiry)) {
             gapi.client.setToken({ access_token: accessToken });
             resolve(true);
             return;
         }
 
+        // Clear expired/incomplete token state before requesting a new one
+        clearToken();
+
         try {
-            tokenClient.callback = (response) => {
-                if (response.error !== undefined) {
-                    console.error('Authorization error:', response);
-                    reject(new Error(response.error));
-                    return;
-                }
-                
+            const handleSuccess = (response) => {
                 accessToken = response.access_token;
                 
                 // Save token to localStorage (expires in 1 hour)
                 const expiryTime = Date.now() + (3600 * 1000); // 1 hour from now
-                localStorage.setItem('google_access_token', accessToken);
-                localStorage.setItem('google_token_expiry', expiryTime.toString());
+                localStorage.setItem(TOKEN_KEY, accessToken);
+                localStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString());
                 
                 gapi.client.setToken({ access_token: accessToken });
                 console.log('✅ Authorization successful');
                 resolve(true);
             };
 
-            // Request access token
-            tokenClient.requestAccessToken({ prompt: 'consent' });
+            tokenClient.callback = (response) => {
+                if (response.error !== undefined) {
+                    // If silent token request fails, fall back to interactive consent
+                    if (response.error === 'interaction_required' || response.error === 'consent_required') {
+                        tokenClient.callback = (interactiveResponse) => {
+                            if (interactiveResponse.error !== undefined) {
+                                console.error('Authorization error:', interactiveResponse);
+                                reject(new Error(interactiveResponse.error));
+                                return;
+                            }
+
+                            handleSuccess(interactiveResponse);
+                        };
+
+                        tokenClient.requestAccessToken({ prompt: 'consent' });
+                        return;
+                    }
+
+                    console.error('Authorization error:', response);
+                    reject(new Error(response.error));
+                    return;
+                }
+
+                handleSuccess(response);
+            };
+
+            // Try silent token request first
+            tokenClient.requestAccessToken({ prompt: '' });
         } catch (error) {
             console.error('Error requesting authorization:', error);
             reject(error);
@@ -87,7 +114,7 @@ export function requestAuthorization() {
 // Check if user is authorized
 export function isAuthorized() {
     // Check if token exists and hasn't expired
-    const tokenExpiry = localStorage.getItem('google_token_expiry');
+    const tokenExpiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
     
     if (accessToken && tokenExpiry && Date.now() < parseInt(tokenExpiry)) {
         return true;
@@ -109,8 +136,8 @@ export function getAccessToken() {
 // Clear token
 function clearToken() {
     accessToken = null;
-    localStorage.removeItem('google_access_token');
-    localStorage.removeItem('google_token_expiry');
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_EXPIRY_KEY);
 }
 
 // Sign out

@@ -36,6 +36,17 @@ export function validateWorkoutInput(exercise, reps, weight) {
     return true;
 }
 
+// Escape HTML special characters for safe rendering
+export function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // Sort workouts by date
 export function sortByDate(workouts, descending = true) {
     return workouts.sort((a, b) => {
@@ -49,5 +60,6 @@ export default {
     formatDate,
     formatTime,
     validateWorkoutInput,
+    escapeHtml,
     sortByDate,
 };

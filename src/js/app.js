@@ -19,7 +19,7 @@ import {
     getExerciseStats
 } from './sheetsAPI.js';
 import { calculateRecommendations } from './workoutCalculator.js';
-import { formatDate, validateWorkoutInput } from './utils.js';
+import { formatDate, validateWorkoutInput, escapeHtml } from './utils.js';
 import { getAIWorkoutRecommendation, getUserWorkoutContext } from './aiService.js';
 import { initializeAnalytics } from './analytics.js';
 import { initializeEquipmentManager } from './equipmentManager.js';
@@ -201,8 +201,8 @@ function displayUserInfo() {
     }
     
     userInfoDiv.innerHTML = `
-        <h2>Welcome, ${currentUser.username}! 👋</h2>
-        <p>Height: ${currentUser.height || 'Not set'} cm | Weight: ${currentUser.weight || 'Not set'} kg | Gender: ${currentUser.gender || 'Not set'}</p>
+        <h2>Welcome, ${escapeHtml(currentUser.username)}! 👋</h2>
+        <p>Height: ${escapeHtml(currentUser.height || 'Not set')} cm | Weight: ${escapeHtml(currentUser.weight || 'Not set')} kg | Gender: ${escapeHtml(currentUser.gender || 'Not set')}</p>
     `;
 }
 
@@ -249,6 +249,7 @@ function displayWorkoutOptions() {
                     <div class="option-icon">🤖</div>
                     <h4>AI-Powered Workout</h4>
                     <p>Let AI analyze your history and equipment to suggest the perfect workout</p>
+                    <p id="ai-status-indicator" class="options-description">AI: Not requested yet</p>
                     <button id="ai-workout-btn" class="btn-primary">
                         ✨ Get AI Recommendation
                     </button>
@@ -296,6 +297,16 @@ async function getAIRecommendation() {
             equipment,
             recentWorkouts
         );
+
+        const statusIndicator = document.getElementById('ai-status-indicator');
+        if (statusIndicator) {
+            if (recommendation.source === 'fallback') {
+                const reason = recommendation.fallbackReason ? ` (${recommendation.fallbackReason})` : '';
+                statusIndicator.textContent = `AI: Fallback${reason}`;
+            } else {
+                statusIndicator.textContent = 'AI: Live';
+            }
+        }
         
         console.log('AI Recommendation:', recommendation);
         displayAIRecommendation(recommendation);
@@ -318,21 +329,26 @@ function displayAIRecommendation(recommendation) {
         <div class="ai-recommendation">
             <div class="recommendation-header">
                 <h3>🎯 AI Workout Recommendation</h3>
-                <span class="intensity-badge">${recommendation.intensity || 'Moderate'} Intensity</span>
+                <span class="intensity-badge">${escapeHtml(recommendation.intensity || 'Moderate')} Intensity</span>
             </div>
+            <p class="options-description">
+                ${recommendation.source === 'fallback'
+                    ? `AI: Fallback${recommendation.fallbackReason ? ` (${escapeHtml(recommendation.fallbackReason)})` : ''}`
+                    : 'AI: Live'}
+            </p>
             
             <div class="justification">
                 <h4>📊 Why this workout?</h4>
-                <p>${recommendation.justification}</p>
+                <p>${escapeHtml(recommendation.justification || '')}</p>
             </div>
             
             <div class="workout-plan">
                 <h4>💪 Recommended Exercises</h4>
                 ${recommendation.exercises.map((ex, idx) => `
                     <div class="exercise-recommendation">
-                        <h5>${idx + 1}. ${ex.name}</h5>
-                        <p><strong>Sets:</strong> ${ex.sets} | <strong>Reps:</strong> ${ex.reps} | <strong>Weight:</strong> ${ex.weight}kg</p>
-                        <p><em>${ex.notes}</em></p>
+                        <h5>${idx + 1}. ${escapeHtml(ex.name)}</h5>
+                        <p><strong>Sets:</strong> ${Number(ex.sets) || 0} | <strong>Reps:</strong> ${Number(ex.reps) || 0} | <strong>Weight:</strong> ${Number(ex.weight) || 0}kg</p>
+                        <p><em>${escapeHtml(ex.notes || '')}</em></p>
                     </div>
                 `).join('')}
             </div>
@@ -395,11 +411,11 @@ async function showManualWorkoutCreator() {
                 <div class="exercises-list">
                     ${availableExercises.map(ex => `
                         <label class="exercise-select-item">
-                            <input type="checkbox" class="exercise-checkbox" value="${ex.exerciseId}" data-exercise='${JSON.stringify(ex)}'>
+                            <input type="checkbox" class="exercise-checkbox" value="${escapeHtml(ex.exerciseId)}">
                             <div class="exercise-info">
-                                <strong>${ex.exerciseName}</strong>
-                                <span class="muscle-tag">${ex.muscleGroup}</span>
-                                <p>${ex.description}</p>
+                                <strong>${escapeHtml(ex.exerciseName)}</strong>
+                                <span class="muscle-tag">${escapeHtml(ex.muscleGroup)}</span>
+                                <p>${escapeHtml(ex.description || '')}</p>
                             </div>
                         </label>
                     `).join('')}
@@ -429,8 +445,10 @@ async function showManualWorkoutCreator() {
     checkboxes.forEach(cb => {
         cb.addEventListener('change', () => {
             if (cb.checked) {
-                const exercise = JSON.parse(cb.dataset.exercise);
-                selectedExercises.push(exercise);
+                const exercise = availableExercises.find(ex => ex.exerciseId === cb.value);
+                if (exercise) {
+                    selectedExercises.push(exercise);
+                }
             } else {
                 const exerciseId = cb.value;
                 selectedExercises = selectedExercises.filter(ex => ex.exerciseId !== exerciseId);
@@ -444,8 +462,8 @@ async function showManualWorkoutCreator() {
             // Show selected exercises
             selectedList.innerHTML = selectedExercises.map(ex => `
                 <div class="selected-exercise-tag">
-                    ${ex.exerciseName}
-                    <button class="remove-exercise" data-id="${ex.exerciseId}">×</button>
+                    ${escapeHtml(ex.exerciseName)}
+                    <button class="remove-exercise" data-id="${escapeHtml(ex.exerciseId)}">×</button>
                 </div>
             `).join('');
             
@@ -464,8 +482,8 @@ async function showManualWorkoutCreator() {
                     
                     selectedList.innerHTML = selectedExercises.map(ex => `
                         <div class="selected-exercise-tag">
-                            ${ex.exerciseName}
-                            <button class="remove-exercise" data-id="${ex.exerciseId}">×</button>
+                            ${escapeHtml(ex.exerciseName)}
+                            <button class="remove-exercise" data-id="${escapeHtml(ex.exerciseId)}">×</button>
                         </div>
                     `).join('');
                 });
@@ -557,13 +575,13 @@ function displayRecentSessions(sessions) {
                 ${sessions.map(session => `
                     <div class="session-card">
                         <div class="session-header">
-                            <strong>${session.date}</strong>
-                            <span class="completion-badge">${session.completionRate}% Complete</span>
+                            <strong>${escapeHtml(session.date)}</strong>
+                            <span class="completion-badge">${Number(session.completionRate) || 0}% Complete</span>
                         </div>
-                        <p><strong>Time:</strong> ${session.startTime} - ${session.endTime || 'In Progress'}</p>
-                        <p><strong>Plan:</strong> ${session.planId}</p>
-                        ${session.notes ? `<p><em>${session.notes}</em></p>` : ''}
-                        <button class="btn-small view-session-btn" data-session-id="${session.sessionId}">
+                        <p><strong>Time:</strong> ${escapeHtml(session.startTime)} - ${escapeHtml(session.endTime || 'In Progress')}</p>
+                        <p><strong>Plan:</strong> ${escapeHtml(session.planId)}</p>
+                        ${session.notes ? `<p><em>${escapeHtml(session.notes)}</em></p>` : ''}
+                        <button class="btn-small view-session-btn" data-session-id="${escapeHtml(session.sessionId)}">
                             👁️ View Details
                         </button>
                     </div>
@@ -589,7 +607,7 @@ function displayWorkoutInterface() {
     container.innerHTML = `
         <div class="active-workout">
             <div class="workout-header">
-                <h2>🏋️ Active Workout: ${currentPlan.planName}</h2>
+                <h2>🏋️ Active Workout: ${escapeHtml(currentPlan.planName)}</h2>
                 <button id="end-workout-btn" class="btn-secondary">🏁 End Workout</button>
             </div>
             
@@ -604,8 +622,8 @@ function displayWorkoutInterface() {
                 ${currentExercises.map((ex, idx) => `
                     <div class="exercise-card" data-exercise-index="${idx}">
                         <div class="exercise-header">
-                            <h3>${idx + 1}. ${ex.exerciseName}</h3>
-                            <span class="exercise-muscle">${ex.muscleGroup}</span>
+                            <h3>${idx + 1}. ${escapeHtml(ex.exerciseName)}</h3>
+                            <span class="exercise-muscle">${escapeHtml(ex.muscleGroup)}</span>
                         </div>
                         
                         <div class="exercise-stats" id="stats-${ex.exerciseId}">
@@ -860,8 +878,8 @@ async function showWorkoutSummary() {
                     
                     return `
                         <div class="summary-exercise">
-                            <h5>${exercise.exerciseName}</h5>
-                            <p>${exLogs.length} sets | Total volume: ${totalVolume}kg</p>
+                            <h5>${escapeHtml(exercise.exerciseName)}</h5>
+                            <p>${Number(exLogs.length) || 0} sets | Total volume: ${Number(totalVolume) || 0}kg</p>
                         </div>
                     `;
                 }).join('')}
@@ -888,16 +906,16 @@ async function viewSessionDetails(sessionId) {
         modal.innerHTML = `
             <div class="modal-content">
                 <h3>📊 Workout Details</h3>
-                <p><strong>Session ID:</strong> ${sessionId}</p>
-                <p><strong>Total Sets:</strong> ${logs.length}</p>
+                <p><strong>Session ID:</strong> ${escapeHtml(sessionId)}</p>
+                <p><strong>Total Sets:</strong> ${Number(logs.length) || 0}</p>
                 
                 <h4>Sets Logged:</h4>
                 <div class="logs-list">
                     ${logs.map(log => `
                         <div class="log-item">
-                            <p><strong>Exercise:</strong> ${log.exerciseId}</p>
-                            <p>Set ${log.setNumber}: ${log.reps} reps @ ${log.weight}kg (RPE: ${log.rpe || 'N/A'})</p>
-                            <p class="log-time">${new Date(log.timestamp).toLocaleString()}</p>
+                            <p><strong>Exercise:</strong> ${escapeHtml(log.exerciseId)}</p>
+                            <p>Set ${Number(log.setNumber) || 0}: ${Number(log.reps) || 0} reps @ ${Number(log.weight) || 0}kg (RPE: ${escapeHtml(log.rpe || 'N/A')})</p>
+                            <p class="log-time">${escapeHtml(new Date(log.timestamp).toLocaleString())}</p>
                         </div>
                     `).join('')}
                 </div>
