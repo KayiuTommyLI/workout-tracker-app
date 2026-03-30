@@ -12,7 +12,6 @@
     "start": "vite"
   },
   "dependencies": {
-    "axios": "^0.21.1",
     "chart.js": "^4.5.1",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
@@ -20,11 +19,11 @@
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
+    "express-rate-limit": "^8.3.1",
     "jest": "^26.6.0",
     "live-server": "^1.2.1",
-    "vite": "^7.1.12",
-    "webpack": "^5.11.0",
-    "webpack-cli": "^4.3.0"
+    "morgan": "^1.10.1",
+    "vite": "^7.1.12"
   },
   "keywords": [
     "workout",

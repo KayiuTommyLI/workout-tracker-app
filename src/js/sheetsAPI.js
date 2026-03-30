@@ -157,6 +157,9 @@ export async function addUser(username, email, height = null, weight = null, gen
 
 // Update user profile
 export async function updateUserProfile(userId, updates) {
+    // Validate and sanitize user updates
+    const sanitized = validateUserUpdates(updates);
+    
     const users = await readSheet(CONFIG.SHEETS.USERS);
     const rowIndex = users.findIndex(row => row[0] === userId);
     
@@ -165,18 +168,109 @@ export async function updateUserProfile(userId, updates) {
     const user = users[rowIndex];
     const updatedUser = [
         user[0], // UserID
-        updates.username !== undefined ? updates.username : (user[1] || ''),
-        updates.email !== undefined ? updates.email : (user[2] || ''),
-        updates.height !== undefined ? updates.height : (user[3] || ''),
-        updates.weight !== undefined ? updates.weight : (user[4] || ''),
-        updates.gender !== undefined ? updates.gender : (user[5] || ''),
+        sanitized.username !== undefined ? sanitized.username : (user[1] || ''),
+        sanitized.email !== undefined ? sanitized.email : (user[2] || ''),
+        sanitized.height !== undefined ? sanitized.height : (user[3] || ''),
+        sanitized.weight !== undefined ? sanitized.weight : (user[4] || ''),
+        sanitized.gender !== undefined ? sanitized.gender : (user[5] || ''),
         user[6] || '', // DateJoined
         new Date().toISOString().split('T')[0], // LastActive
-        updates.equipment !== undefined ? updates.equipment : (user[8] || ''), // Equipment
+        sanitized.equipment !== undefined ? sanitized.equipment : (user[8] || ''), // Equipment
     ];
     
-    console.log('Updating user profile:', updatedUser);
+    console.log('Updating user profile for userId:', userId);
     await updateRow(`Users!A${rowIndex + 1}:I${rowIndex + 1}`, updatedUser);
+}
+
+/**
+ * Validate and sanitize user profile updates
+ * @param {Object} updates - Raw user update object
+ * @returns {Object} Sanitized updates safe for database
+ */
+function validateUserUpdates(updates) {
+    const sanitized = {};
+    
+    // Validate username
+    if (updates.username !== undefined) {
+        const username = String(updates.username || '').trim();
+        if (username.length > 100) {
+            throw new Error('Username too long (max 100 characters)');
+        }
+        if (username.length > 0) {
+            sanitized.username = username;
+        }
+    }
+    
+    // Validate email
+    if (updates.email !== undefined) {
+        const email = String(updates.email || '').trim();
+        if (email.length > 150) {
+            throw new Error('Email too long (max 150 characters)');
+        }
+        if (email.length > 0 && !isValidEmail(email)) {
+            throw new Error('Invalid email format');
+        }
+        if (email.length > 0) {
+            sanitized.email = email;
+        }
+    }
+    
+    // Validate height (cm)
+    if (updates.height !== undefined) {
+        const height = updates.height === '' || updates.height === null ? null : parseFloat(updates.height);
+        if (height !== null && (isNaN(height) || height < 0 || height > 300)) {
+            throw new Error('Invalid height (must be 0-300 cm)');
+        }
+        sanitized.height = height;
+    }
+    
+    // Validate weight (kg)
+    if (updates.weight !== undefined) {
+        const weight = updates.weight === '' || updates.weight === null ? null : parseFloat(updates.weight);
+        if (weight !== null && (isNaN(weight) || weight < 0 || weight > 500)) {
+            throw new Error('Invalid weight (must be 0-500 kg)');
+        }
+        sanitized.weight = weight;
+    }
+    
+    // Validate gender (enum)
+    if (updates.gender !== undefined) {
+        const gender = String(updates.gender || '').trim();
+        const validGenders = ['Male', 'Female', 'Other', ''];
+        if (gender && !validGenders.includes(gender)) {
+            throw new Error('Invalid gender value');
+        }
+        if (gender) {
+            sanitized.gender = gender;
+        }
+    }
+    
+    // Validate equipment (comma-separated IDs)
+    if (updates.equipment !== undefined) {
+        const equipment = String(updates.equipment || '').trim();
+        if (equipment.length > 500) {
+            throw new Error('Equipment list too long');
+        }
+        if (equipment) {
+            // Basic validation: comma-separated alphanumeric IDs
+            const ids = equipment.split(',').map(id => id.trim());
+            const validIds = ids.every(id => /^[A-Z0-9]+$/.test(id));
+            if (!validIds) {
+                throw new Error('Invalid equipment ID format');
+            }
+            sanitized.equipment = equipment;
+        }
+    }
+    
+    return sanitized;
+}
+
+/**
+ * Basic email validation regex
+ */
+function isValidEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
 }
 
 // ==================== USER EQUIPMENT FUNCTIONS ====================

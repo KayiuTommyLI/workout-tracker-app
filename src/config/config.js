@@ -34,6 +34,26 @@ const CONFIG = {
     
     // RPE (Rate of Perceived Exertion) scale 1-10
     RPE_THRESHOLD_FOR_INCREASE: 7, // Increase weight if RPE < 7
+    
+    // AI/Gemini settings
+    GEMINI_MODEL: 'gemini-2.5-flash',
+    GEMINI_TEMPERATURE: 0.7,
+    GEMINI_MAX_TOKENS: 2048,
+    
+    // OAuth settings
+    AUTH_TOKEN_EXPIRY_MS: 3600 * 1000, // 1 hour
+    AUTH_REQUEST_DEBOUNCE_MS: 100,
+    
+    // API proxy settings (used by backend)
+    API_PROXY_PORT: 8787,
+    API_REQUEST_TIMEOUT_MS: 30000, // 30 seconds
+    API_BODY_SIZE_LIMIT: '1mb',
+    API_RATE_LIMIT_WINDOW_MS: 60 * 1000, // 1 minute
+    API_RATE_LIMIT_MAX: 5, // 5 requests per minute
+    API_PROMPT_MAX_LENGTH: 5000,
+    
+    // Frontend URL for CORS (set via env in production)
+    FRONTEND_URL: import.meta.env.VITE_FRONTEND_URL || 'http://localhost:3000',
 };
 
 // Validate configuration

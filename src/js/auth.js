@@ -2,6 +2,8 @@ import CONFIG from '../config/config.js';
 
 let tokenClient;
 let accessToken = null;
+let authPending = false; // Flag to prevent concurrent auth requests
+let authPendingResolvers = []; // Queue of resolvers waiting for auth to complete
 const TOKEN_KEY = 'google_access_token';
 const TOKEN_EXPIRY_KEY = 'google_token_expiry';
 
@@ -51,13 +53,23 @@ function initTokenClient() {
 // Request user authorization
 export function requestAuthorization() {
     return new Promise((resolve, reject) => {
+        // If auth is already pending, queue this resolver to wait
+        if (authPending) {
+            authPendingResolvers.push(resolve);
+            return;
+        }
+
         const tokenExpiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
 
+        // Token still valid, use cached version
         if (accessToken && tokenExpiry && Date.now() < parseInt(tokenExpiry)) {
             gapi.client.setToken({ access_token: accessToken });
             resolve(true);
             return;
         }
+
+        // Mark auth as pending
+        authPending = true;
 
         // Clear expired/incomplete token state before requesting a new one
         clearToken();
@@ -67,13 +79,18 @@ export function requestAuthorization() {
                 accessToken = response.access_token;
                 
                 // Save token to localStorage (expires in 1 hour)
-                const expiryTime = Date.now() + (3600 * 1000); // 1 hour from now
+                const expiryTime = Date.now() + CONFIG.AUTH_TOKEN_EXPIRY_MS;
                 localStorage.setItem(TOKEN_KEY, accessToken);
                 localStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString());
                 
                 gapi.client.setToken({ access_token: accessToken });
                 console.log('✅ Authorization successful');
+                
+                // Mark auth complete and resolve all pending requests
+                authPending = false;
                 resolve(true);
+                authPendingResolvers.forEach(r => r(true));
+                authPendingResolvers = [];
             };
 
             tokenClient.callback = (response) => {
@@ -83,7 +100,10 @@ export function requestAuthorization() {
                         tokenClient.callback = (interactiveResponse) => {
                             if (interactiveResponse.error !== undefined) {
                                 console.error('Authorization error:', interactiveResponse);
+                                authPending = false;
                                 reject(new Error(interactiveResponse.error));
+                                authPendingResolvers.forEach(r => r(false));
+                                authPendingResolvers = [];
                                 return;
                             }
 
@@ -95,7 +115,10 @@ export function requestAuthorization() {
                     }
 
                     console.error('Authorization error:', response);
+                    authPending = false;
                     reject(new Error(response.error));
+                    authPendingResolvers.forEach(r => r(false));
+                    authPendingResolvers = [];
                     return;
                 }
 
@@ -106,7 +129,10 @@ export function requestAuthorization() {
             tokenClient.requestAccessToken({ prompt: '' });
         } catch (error) {
             console.error('Error requesting authorization:', error);
+            authPending = false;
             reject(error);
+            authPendingResolvers.forEach(r => r(false));
+            authPendingResolvers = [];
         }
     });
 }
