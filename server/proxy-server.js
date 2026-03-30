@@ -11,7 +11,7 @@ const CONFIG = {
     GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
     GEMINI_TEMPERATURE: parseFloat(process.env.GEMINI_TEMPERATURE || '0.7'),
     GEMINI_MAX_TOKENS: parseInt(process.env.GEMINI_MAX_TOKENS || '2048', 10),
-    REQUEST_TIMEOUT_MS: parseInt(process.env.API_REQUEST_TIMEOUT_MS || '30000', 10),
+    REQUEST_TIMEOUT_MS: parseInt(process.env.API_REQUEST_TIMEOUT_MS || '180000', 10),
     BODY_SIZE_LIMIT: process.env.API_BODY_SIZE_LIMIT || '1mb',
     PROMPT_MAX_LENGTH: parseInt(process.env.API_PROMPT_MAX_LENGTH || '5000', 10),
     RATE_LIMIT_WINDOW_MS: parseInt(process.env.API_RATE_LIMIT_WINDOW_MS || '60000', 10),

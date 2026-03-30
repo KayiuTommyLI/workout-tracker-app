@@ -46,7 +46,7 @@ const CONFIG = {
     
     // API proxy settings (used by backend)
     API_PROXY_PORT: 8787,
-    API_REQUEST_TIMEOUT_MS: 30000, // 30 seconds
+    API_REQUEST_TIMEOUT_MS: 180000, // 3 minutes
     API_BODY_SIZE_LIMIT: '1mb',
     API_RATE_LIMIT_WINDOW_MS: 60 * 1000, // 1 minute
     API_RATE_LIMIT_MAX: 5, // 5 requests per minute
